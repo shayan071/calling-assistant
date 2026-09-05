@@ -1,11 +1,8 @@
 import re
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
-# ---------------------------------------------------------------------------
-# Valid U.S. state abbreviations
-# ---------------------------------------------------------------------------
 US_STATES = {
     "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN",
     "IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV",
@@ -16,13 +13,10 @@ US_STATES = {
 SexEnum = Literal["Male", "Female", "Other", "Decline to Answer"]
 
 
-# ---------------------------------------------------------------------------
-# Base schema — shared validators used by Create and Update
-# ---------------------------------------------------------------------------
 class PatientBase(BaseModel):
     first_name:    Optional[str] = None
     last_name:     Optional[str] = None
-    date_of_birth: Optional[str] = None  # accepts MM/DD/YYYY from voice agent
+    date_of_birth: Optional[Any] = None  # Accepts MM/DD/YYYY string or date object
     sex:           Optional[SexEnum] = None
     phone_number:  Optional[str] = None
     email:         Optional[EmailStr] = None
@@ -54,7 +48,6 @@ class PatientBase(BaseModel):
     def validate_dob(cls, v):
         if v is None:
             return v
-        # Accept MM/DD/YYYY format from voice agent
         if isinstance(v, str):
             for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y"):
                 try:
@@ -81,7 +74,7 @@ class PatientBase(BaseModel):
         digits = re.sub(r"\D", "", v)
         if len(digits) != 10:
             raise ValueError("Phone number must be exactly 10 digits")
-        return digits  # store normalized (digits only)
+        return digits
 
     @field_validator("state")
     @classmethod
@@ -99,7 +92,7 @@ class PatientBase(BaseModel):
         if v is None:
             return v
         if not re.match(r"^\d{5}(-\d{4})?$", v.strip()):
-            raise ValueError("ZIP code must be 5 digits or ZIP+4 format (e.g. 90210 or 90210-1234)")
+            raise ValueError("ZIP code must be 5 digits or ZIP+4 format")
         return v.strip()
 
     @field_validator("city")
@@ -110,13 +103,10 @@ class PatientBase(BaseModel):
         return v.strip() if v else v
 
 
-# ---------------------------------------------------------------------------
-# Create schema — required fields enforced here
-# ---------------------------------------------------------------------------
 class PatientCreate(PatientBase):
     first_name:    str
     last_name:     str
-    date_of_birth: str   # MM/DD/YYYY — validated and converted by validate_dob
+    date_of_birth: Any
     sex:           SexEnum
     phone_number:  str
     address_line_1: str
@@ -134,26 +124,19 @@ class PatientCreate(PatientBase):
         return self
 
 
-# ---------------------------------------------------------------------------
-# Update schema — all fields optional (partial updates allowed)
-# ---------------------------------------------------------------------------
 class PatientUpdate(PatientBase):
-    pass  # everything optional via PatientBase
+    pass
 
 
-# ---------------------------------------------------------------------------
-# Response schema — what the API returns
-# ---------------------------------------------------------------------------
 class PatientResponse(PatientBase):
     patient_id:   str
     created_at:   datetime
     updated_at:   datetime
     deleted_at:   Optional[datetime] = None
 
-    # Required fields are non-optional in responses
     first_name:    str
     last_name:     str
-    date_of_birth: Optional[str] = None  # serialized as YYYY-MM-DD string
+    date_of_birth: Optional[Any] = None
     sex:           SexEnum
     phone_number:  str
     address_line_1: str
@@ -163,20 +146,7 @@ class PatientResponse(PatientBase):
 
     model_config = {"from_attributes": True}
 
-    @field_validator("date_of_birth", mode="before")
-    @classmethod
-    def serialize_dob(cls, v):
-        if v is None:
-            return v
-        # DB returns datetime.date object — convert to string
-        if hasattr(v, "isoformat"):
-            return v.isoformat()  # returns "1990-03-22"
-        return str(v)
 
-
-# ---------------------------------------------------------------------------
-# Standard API envelope
-# ---------------------------------------------------------------------------
 class APIResponse(BaseModel):
     data:  Optional[dict | list] = None
     error: Optional[str] = None

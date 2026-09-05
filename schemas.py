@@ -153,7 +153,7 @@ class PatientResponse(PatientBase):
     # Required fields are non-optional in responses
     first_name:    str
     last_name:     str
-    date_of_birth: Optional[str] = None
+    date_of_birth: Optional[str] = None  # serialized as YYYY-MM-DD string
     sex:           SexEnum
     phone_number:  str
     address_line_1: str
@@ -162,6 +162,16 @@ class PatientResponse(PatientBase):
     zip_code:       str
 
     model_config = {"from_attributes": True}
+
+    @field_validator("date_of_birth", mode="before")
+    @classmethod
+    def serialize_dob(cls, v):
+        if v is None:
+            return v
+        # DB returns datetime.date object — convert to string
+        if hasattr(v, "isoformat"):
+            return v.isoformat()  # returns "1990-03-22"
+        return str(v)
 
 
 # ---------------------------------------------------------------------------

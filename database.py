@@ -18,23 +18,28 @@ if not DATABASE_URL:
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Configure engine args for PostgreSQL / Supabase connection pooler vs SQLite
+# Configure engine args
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
     connect_args["check_same_thread"] = False
-elif "pooler.supabase.com" in DATABASE_URL:
-    # Disable prepared statement caching when using PgBouncer pooler (port 6543)
-    connect_args["prepared_statement_cache_size"] = 0
+
+# Set execution options for Supabase Transaction Pooler (Port 6543)
+execution_options = {}
+if "pooler.supabase.com" in DATABASE_URL and ":6543" in DATABASE_URL:
+    execution_options["isolation_level"] = "AUTOCOMMIT"
 
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
+    execution_options=execution_options,
     pool_pre_ping=True,
     pool_recycle=300 if not DATABASE_URL.startswith("sqlite") else -1
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+
 
 
 # ---------------------------------------------------------------------------

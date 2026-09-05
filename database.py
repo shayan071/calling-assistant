@@ -7,27 +7,39 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ---------------------------------------------------------------------------
-# Engine — uses DATABASE_URL from environment (Supabase Postgres in production)
-# Falls back to local SQLite so you can still run without a .env file
-# ---------------------------------------------------------------------------
+# Get connection string from Railway environment variables
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+# Fallback to local SQLite if DATABASE_URL is not set
+if not DATABASE_URL:
+    DATABASE_URL = "sqlite:///./patients.db"
+
+# SQLAlchemy requires 'postgresql://' instead of 'postgres://'
+if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Disable prepared statements for Supabase PgBouncer pooler (port 6543)
+# Configure engine args for PostgreSQL / Supabase connection pooler vs SQLite
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args["check_same_thread"] = False
+elif "pooler.supabase.com" in DATABASE_URL:
+    # Disable prepared statement caching when using PgBouncer pooler (port 6543)
+    connect_args["prepared_statement_cache_size"] = 0
+
 engine = create_engine(
     DATABASE_URL,
+    connect_args=connect_args,
     pool_pre_ping=True,
-    pool_recycle=300,
-    connect_args={"prepared_statement_cache_size": 0} if "pooler.supabase.com" in (DATABASE_URL or "") else {}
+    pool_recycle=300 if not DATABASE_URL.startswith("sqlite") else -1
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+# ---------------------------------------------------------------------------
+# Patient Model
+# ---------------------------------------------------------------------------
 class Patient(Base):
     __tablename__ = "patients"
 
@@ -60,13 +72,13 @@ class Patient(Base):
     emergency_contact_phone = Column(String(10),  nullable=True)
 
 
+def init_db():
+    Base.metadata.create_all(bind=engine)
+
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-
-def init_db():
-    Base.metadata.create_all(bind=engine)
-

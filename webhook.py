@@ -1,20 +1,4 @@
-"""
-webhook.py — Vapi event handler
-
-Vapi sends a POST to /webhook whenever the LLM decides to call a tool.
-We handle two tools:
-  - save_patient    → validate + insert new patient record
-  - lookup_patient  → check if phone number already exists (duplicate detection)
-
-Vapi expects a response of:
-  { "results": [{ "toolCallId": "...", "result": "<string>" }] }
-
-The "result" string is read aloud to the caller by the TTS engine, so keep
-it conversational and concise.
-"""
-
 import logging
-from datetime import date
 from fastapi import APIRouter, Request, Depends
 from sqlalchemy.orm import Session
 
@@ -25,9 +9,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ---------------------------------------------------------------------------
-# Main webhook entry point
-# ---------------------------------------------------------------------------
 @router.post("/webhook")
 async def vapi_webhook(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
@@ -36,7 +17,6 @@ async def vapi_webhook(request: Request, db: Session = Depends(get_db)):
     message = body.get("message", {})
     msg_type = message.get("type")
 
-    # Vapi sends different event types; we only care about tool-call events
     if msg_type != "tool-calls":
         return {"status": "ignored"}
 
@@ -61,22 +41,16 @@ async def vapi_webhook(request: Request, db: Session = Depends(get_db)):
     return {"results": results}
 
 
-# ---------------------------------------------------------------------------
-# Tool: save_patient
-# Called after the agent has confirmed all fields with the caller.
-# ---------------------------------------------------------------------------
 def handle_save_patient(args: dict, db: Session) -> str:
     try:
-        # Validate incoming data with Pydantic
         data = PatientCreate(**args)
     except Exception as e:
-        logger.error("Validation error in save_patient: %s", e)
+        logger.error("Validation error in save_patient: %s", e, exc_info=True)
         return (
             "I'm sorry, there was a problem with some of the information provided. "
             "Could you please confirm your details again?"
         )
 
-    # Duplicate detection — check by phone number
     existing = db.query(Patient).filter(
         Patient.phone_number == data.phone_number,
         Patient.deleted_at == None  # noqa: E711
@@ -89,7 +63,6 @@ def handle_save_patient(args: dict, db: Session) -> str:
             f"Would you like to update your information instead?"
         )
 
-    # Create and persist the new patient
     try:
         patient = Patient(
             first_name=data.first_name,
@@ -113,7 +86,7 @@ def handle_save_patient(args: dict, db: Session) -> str:
         db.commit()
         db.refresh(patient)
 
-        logger.info("New patient saved: %s (ID: %s)", patient.first_name, patient.patient_id)
+        logger.info("New patient saved in Supabase: %s (ID: %s)", patient.first_name, patient.patient_id)
 
         return (
             f"You're all set, {patient.first_name}! "
@@ -124,20 +97,15 @@ def handle_save_patient(args: dict, db: Session) -> str:
 
     except Exception as e:
         db.rollback()
-        logger.error("DB write failed: %s", e)
+        logger.error("Supabase PostgreSQL write failed: %s", e, exc_info=True)
         return (
             "I'm sorry, we encountered a technical issue saving your record. "
             "Please call back in a few minutes and we'll get you registered."
         )
 
 
-# ---------------------------------------------------------------------------
-# Tool: lookup_patient
-# Called early in the conversation to detect returning callers.
-# ---------------------------------------------------------------------------
 def handle_lookup_patient(args: dict, db: Session) -> str:
     phone = args.get("phone_number", "")
-    # Normalize to digits only
     digits = "".join(filter(str.isdigit, phone))
 
     if len(digits) != 10:
@@ -149,8 +117,6 @@ def handle_lookup_patient(args: dict, db: Session) -> str:
     ).first()
 
     if existing:
-        return (
-            f"found:{existing.first_name}:{existing.last_name}:{existing.patient_id}"
-        )
+        return f"found:{existing.first_name}:{existing.last_name}:{existing.patient_id}"
 
     return "not_found"

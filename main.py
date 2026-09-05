@@ -1,18 +1,3 @@
-"""
-main.py — FastAPI application entry point
-
-Exposes:
-  REST API:   GET/POST/PUT/DELETE /patients
-  Webhook:    POST /webhook  (Vapi tool calls)
-  Health:     GET /health
-
-Run locally:
-  uvicorn main:app --reload --port 8000
-
-Docs available at:
-  http://localhost:8000/docs
-"""
-
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -25,9 +10,6 @@ from database import Patient, get_db, init_db
 from schemas import PatientCreate, PatientUpdate, PatientResponse
 from webhook import router as webhook_router
 
-# ---------------------------------------------------------------------------
-# Logging — prints final payload + errors to stdout
-# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -35,9 +17,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# App lifecycle — create DB tables on startup, seed demo records
-# ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -47,7 +26,6 @@ async def lifespan(app: FastAPI):
 
 
 def seed_demo_patients():
-    """Insert 2 demo patients if the table is empty."""
     from database import SessionLocal
     from datetime import date
 
@@ -80,9 +58,6 @@ def seed_demo_patients():
         db.close()
 
 
-# ---------------------------------------------------------------------------
-# App instance
-# ---------------------------------------------------------------------------
 app = FastAPI(
     title="Patient Registration Voice Agent API",
     version="1.0.0",
@@ -91,18 +66,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten in production
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount webhook router
 app.include_router(webhook_router)
 
 
-# ---------------------------------------------------------------------------
-# Helper — consistent JSON envelope
-# ---------------------------------------------------------------------------
 def ok(data):
     return {"data": data, "error": None}
 
@@ -110,17 +81,11 @@ def err(msg: str):
     return {"data": None, "error": msg}
 
 
-# ---------------------------------------------------------------------------
-# Health check
-# ---------------------------------------------------------------------------
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
-# ---------------------------------------------------------------------------
-# GET /patients — list all (non-deleted), with optional filters
-# ---------------------------------------------------------------------------
 @app.get("/patients")
 def list_patients(
     last_name:     str = Query(None),
@@ -139,12 +104,9 @@ def list_patients(
         query = query.filter(Patient.phone_number == digits)
 
     patients = query.order_by(Patient.created_at.desc()).all()
-    return ok([PatientResponse.model_validate(p).model_dump() for p in patients])
+    return ok([PatientResponse.model_validate(p).model_dump(mode="json") for p in patients])
 
 
-# ---------------------------------------------------------------------------
-# GET /patients/:id — single patient by UUID
-# ---------------------------------------------------------------------------
 @app.get("/patients/{patient_id}")
 def get_patient(patient_id: str, db: Session = Depends(get_db)):
     patient = db.query(Patient).filter(
@@ -155,15 +117,11 @@ def get_patient(patient_id: str, db: Session = Depends(get_db)):
     if not patient:
         raise HTTPException(status_code=404, detail=err("Patient not found"))
 
-    return ok(PatientResponse.model_validate(patient).model_dump())
+    return ok(PatientResponse.model_validate(patient).model_dump(mode="json"))
 
 
-# ---------------------------------------------------------------------------
-# POST /patients — create a new patient
-# ---------------------------------------------------------------------------
 @app.post("/patients", status_code=201)
 def create_patient(payload: PatientCreate, db: Session = Depends(get_db)):
-    # Duplicate check by phone
     existing = db.query(Patient).filter(
         Patient.phone_number == payload.phone_number,
         Patient.deleted_at == None  # noqa: E711
@@ -184,12 +142,9 @@ def create_patient(payload: PatientCreate, db: Session = Depends(get_db)):
     logger.info("Created patient: %s %s (ID: %s)",
                 patient.first_name, patient.last_name, patient.patient_id)
 
-    return ok(PatientResponse.model_validate(patient).model_dump())
+    return ok(PatientResponse.model_validate(patient).model_dump(mode="json"))
 
 
-# ---------------------------------------------------------------------------
-# PUT /patients/:id — partial update
-# ---------------------------------------------------------------------------
 @app.put("/patients/{patient_id}")
 def update_patient(patient_id: str, payload: PatientUpdate, db: Session = Depends(get_db)):
     patient = db.query(Patient).filter(
@@ -209,12 +164,9 @@ def update_patient(patient_id: str, payload: PatientUpdate, db: Session = Depend
     db.refresh(patient)
 
     logger.info("Updated patient ID: %s", patient_id)
-    return ok(PatientResponse.model_validate(patient).model_dump())
+    return ok(PatientResponse.model_validate(patient).model_dump(mode="json"))
 
 
-# ---------------------------------------------------------------------------
-# DELETE /patients/:id — soft delete (sets deleted_at timestamp)
-# ---------------------------------------------------------------------------
 @app.delete("/patients/{patient_id}")
 def delete_patient(patient_id: str, db: Session = Depends(get_db)):
     patient = db.query(Patient).filter(

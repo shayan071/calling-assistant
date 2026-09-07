@@ -78,7 +78,7 @@ calling-assistant/
 postgresql://postgres.mjiycguxwomolvrwjues:[password]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres
 
 # Vapi API key (for reference — used in Vapi dashboard, not in code directly)
-VAPI_API_KEY=081e3122-17ff-42c0-8961-835a774030bf
+VAPI_API_KEY=081e3122-17ff-********-835a774030bf
 
 #Railway deployment link
 https://jubilant-imagination-production-2af4.up.railway.app/

@@ -86,7 +86,7 @@ def handle_save_patient(args: dict, db: Session) -> str:
         db.commit()
         db.refresh(patient)
 
-        logger.info("New patient saved in Supabase: %s (ID: %s)", patient.first_name, patient.patient_id)
+        logger.info("Patient registration completed: name=%s %s | dob=%s | phone=%s | address=%s %s %s %s | insurance=%s | emergency=%s | id=%s", patient.first_name, patient.last_name, patient.date_of_birth, patient.phone_number, patient.address_line_1, patient.city, patient.state, patient.zip_code, patient.insurance_provider or "N/A", patient.emergency_contact_name or "N/A", patient.patient_id)
 
         return (
             f"You're all set, {patient.first_name}! "
